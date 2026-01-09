@@ -748,7 +748,7 @@ impl WgpuWinitRunning<'_> {
         integration.maybe_autosave(app.as_mut(), window.map(|w| w.as_ref()));
 
         if let Some(window) = window
-            && window.is_minimized() == Some(true)
+            && (window.is_minimized() == Some(true) || window.is_visible() == Some(false))
         {
             // On Mac, a minimized Window uses up all CPU:
             // https://github.com/emilk/egui/issues/325
@@ -822,6 +822,13 @@ impl WgpuWinitRunning<'_> {
                 };
 
                 shared.focused_viewport = focused.then_some(viewport_id).flatten();
+            }
+
+            winit::event::WindowEvent::Occluded(occluded) => {
+                // When window becomes visible (not occluded), request immediate repaint
+                if !occluded {
+                    repaint_asap = true;
+                }
             }
 
             winit::event::WindowEvent::Resized(physical_size) => {

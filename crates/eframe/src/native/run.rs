@@ -183,9 +183,8 @@ impl<T: WinitApp> WinitAppWrapper<T> {
                     return true; // not yet ready
                 }
 
-                event_loop.set_control_flow(ControlFlow::Poll);
-
                 if let Some(window) = self.winit_app.window(*window_id) {
+                    event_loop.set_control_flow(ControlFlow::Poll);
                     log::trace!("request_redraw for {window_id:?}");
                     window.request_redraw();
                 } else {
@@ -266,11 +265,40 @@ impl<T: WinitApp> ApplicationHandler<UserEvent> for WinitAppWrapper<T> {
                     if current_pass_nr == cumulative_pass_nr
                         || current_pass_nr == cumulative_pass_nr + 1
                     {
-                        log::trace!("UserEvent::RequestRepaint scheduling repaint at {when:?}");
                         if let Some(window_id) =
                             self.winit_app.window_id_from_viewport_id(viewport_id)
                         {
-                            Ok(EventResult::RepaintAt(window_id, when))
+                            // Throttle repaint requests for hidden/minimized windows to reduce CPU usage
+                            // while still allowing periodic updates to process viewport commands
+                            let repaint_time = if let Some(window) =
+                                self.winit_app.window(window_id)
+                            {
+                                if window.is_minimized() == Some(true)
+                                    || window.is_visible() == Some(false)
+                                {
+                                    // Significantly delay repaints for hidden windows - check every 1 second
+                                    // This allows viewport commands like Visible(true) to be processed
+                                    // while keeping CPU usage near zero for menubar apps
+                                    let throttled_when = Instant::now()
+                                        + std::time::Duration::from_secs(1)
+                                            .max(when.saturating_duration_since(Instant::now()));
+                                    log::trace!(
+                                        "Throttling repaint for hidden window {window_id:?} to {throttled_when:?}"
+                                    );
+                                    throttled_when
+                                } else {
+                                    log::trace!(
+                                        "UserEvent::RequestRepaint scheduling repaint at {when:?}"
+                                    );
+                                    when
+                                }
+                            } else {
+                                log::trace!(
+                                    "UserEvent::RequestRepaint scheduling repaint at {when:?}"
+                                );
+                                when
+                            };
+                            Ok(EventResult::RepaintAt(window_id, repaint_time))
                         } else {
                             Ok(EventResult::Wait)
                         }

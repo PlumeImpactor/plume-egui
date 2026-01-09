@@ -744,7 +744,7 @@ impl GlowWinitRunning<'_> {
 
         integration.maybe_autosave(app.as_mut(), Some(&window));
 
-        if window.is_minimized() == Some(true) {
+        if window.is_minimized() == Some(true) || window.is_visible() == Some(false) {
             // On Mac, a minimized Window uses up all CPU:
             // https://github.com/emilk/egui/issues/325
             profiling::scope!("minimized_sleep");
@@ -797,6 +797,13 @@ impl GlowWinitRunning<'_> {
                 };
 
                 glutin.focused_viewport = focused.then_some(viewport_id).flatten();
+            }
+
+            winit::event::WindowEvent::Occluded(occluded) => {
+                // When window becomes visible (not occluded), request immediate repaint
+                if !occluded {
+                    repaint_asap = true;
+                }
             }
 
             winit::event::WindowEvent::Resized(physical_size) => {
